@@ -1,0 +1,18 @@
+PROBLEM-A
+DISTRIB-B
+PROGRESS-A
+
+PROBLEM-A
+Pronalaženje prostih brojeva u zadatom opsegu.
+Korisnik preko serijskog terminala šalje poruku "PROSTI X Y", gde X i Y definišu opseg za pretragu. X i Y su long tipa. Master čvor dodeljuje slave čvorovima delove ovog opsega, i svaki od njih traži proste brojeve u tom opsegu. Kao rezultat, slave čvorovi treba master čvoru da vrate sve proste brojeve koje su našli. Kada ih prikupi, master čvor prikazuje na serijskom izlazu (u rastućem redosledu) sve ove brojeve.
+
+
+DISTRIB-B
+Procena realnog vremena do kraja.
+
+Slave mikrokontroleri treba da budu sposobni da procene realno vreme do kraja izvršavanja svog posla. Ovo vreme moraju periodično da prijavljuju Master mikrokontroleru. Master mikrokontroler, sa svoje strane, treba da sortira Slave mikrokontrolere po vremenu završetka, i da na svakih X sekundi na Serial ispisuje koliko svakom Slave mikrokontroleru treba vremena (u milisekundama) do završetka posla. X je konstantni parametar sistema - menja se tek po ponovnom programiranju Master mikrokontrolera.
+
+PROGRESS-A
+Postoje dve LED diode koje se naizmenično (naglo, tj. digitalno) pale i gase. U jednom trenutku svetli samo jedna LED dioda.
+Pri startovanju posla, LED diode se smenjuju na svakih 10 sekundi. Sa svakih 10% posla završeno, ovaj period se skraćuje za jednu sekundu.
+

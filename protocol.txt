@@ -1,0 +1,47 @@
+Giving tasks:
+MASTER -> SLAVE:  "TASK X Y"
+SLAVE  -> MASTER: "TASK OK" ili "TASK BS"
+
+Checking slave state:
+
+MASTER -> SLAVE "STATE"
+SLAVE -> MASTER "WORKING"
+SLAVE -> MASTER "WAITING" ?! STATE OF RETURNING RESULT IF RETURNING EACH
+SLAVE -> MASTER "IDLE"
+
+Checking slaves:
+
+MASTER -> SLAVE:  "STATUS"
+SLAVE  -> MASTER: "0"
+SLAVE  -> MASTER: "10"
+SLAVE  -> MASTER: "12"
+...
+
+Result:
+MASTER -> SLAVE: "RESULT"
+SLAVE  -> MASTER: "NOT_FINISHED"
+SLAVE  -> MASTER: "RESULT X" X is long number of results
+SLAVE  -> MASTER: send 4 byte for each result
+
+
+Evaluating time:
+
+MASTER -> SLAVE: "TIME"
+SLAVE  -> MASTER: "x" long number (4 bytes)
+
+
+
+IF STATE IDLE
+ - SCHEDULE TASK!
+
+IF STATE WORKING:
+ - CAN REQUEST FOR STATUS
+ - CAN REQUEST FOR TIME
+
+IF STATE WAITING:
+ - CAN REQUEST FOR RESULT ( -> IDLE )
+
+
+
+
+

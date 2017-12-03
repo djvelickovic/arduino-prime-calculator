@@ -1,282 +1,329 @@
 
-  #include <Wire.h>
+#include <Wire.h>
 
-  // union for long numbers
-  typedef union {
-    long value;
-    byte avalue[4];
-  } long_number;
+// master states
+#define MASTER_IDLE      0
+#define MASTER_WORKING   1
 
-// union for int numbers
-  typedef union {
-    int value;
-    byte avalue[2];
-  } int_number;
+// slave states
+#define SLAVE_IDLE      0
+#define SLAVE_RETURN    1 //?!
+#define SLAVE_WORKING   2
+#define SLAVE_UNKNOWN   3
 
-  // master states
-  #define MASTER_IDLE      0
-  #define MASTER_WORKING   1
-
-  // slave states
-  #define SLAVE_IDLE      0
-  #define SLAVE_RETURN    1 ?!
-  #define SLAVE_WORKING   2
-  #define SLAVE_UNKNOWN   3
-
-  // master constants
-  #define CHUNK_SIZE 200
-  #define BUFFER_SIZE 300
-
-  // slaves constants
-  const PROGMEM int slaves_addresses[] = { 8, 9, 10};
-  const PROGMEM String slaves_names[]   = { "SLAVE1", "SLAVE2", "SLAVE3" };
-  const PROGMEM byte slaves = 3;
-  
-  // slaves variables
-  volatile byte slaves_states[]   = {SLAVE_UNKNOWN,SLAVE_UNKNOWN,SLAVE_UNKNOWN};
-  volatile byte slaves_percents[] = {0,   0,   0  };
-  volatile long slaves_time[]     = {2,   5,   0  };
+// master constants
+#define CHUNK_SIZE 10
+#define BUFFER_SIZE 300
 
 
-  // master variables
-  
-  // primes
-  long prime_buffer[BUFFER_SIZE] = {};
-  long primes = 0;
+// union for long numbers
+typedef union {
+  long value;
+  byte avalue[4];
+} LongNumber;
 
-  // prime searching interval
-  long_number from;
-  long_number to;
-  long_number current_chunk;
+//// union for int numbers
+//typedef union {
+//  int value;
+//  byte avalue[2];
+//} int_number;
 
-  // master current state
-  volatile byte state = MASTER_IDLE;
-  
-  
+// slaves constants
+const PROGMEM int slaveAddresses[] = { 8, 9, 10};
+const PROGMEM String slaveNames[]   = { "SLAVE1", "SLAVE2", "SLAVE3" };
+const PROGMEM byte slavesCnt = 3;
 
-  
-  void setup() {
-    Serial.begin(9600);
-    Wire.begin();
+// slaves variables
+//volatile byte slaves_states[]   = {SLAVE_UNKNOWN, SLAVE_UNKNOWN, SLAVE_UNKNOWN};
+volatile byte slaveStates[]   = {SLAVE_IDLE, SLAVE_IDLE, SLAVE_IDLE};
+volatile byte slavePercents[] = {0,   0,   0  };
+volatile long slaveTime[]     = {2,   5,   0  };
+
+
+// master variables
+
+// primes
+long primeBuffer[BUFFER_SIZE] = {};
+long primes = 0;
+
+// prime searching interval
+LongNumber from;
+LongNumber to;
+LongNumber currentChunk;
+
+// master current state
+volatile byte state = MASTER_IDLE;
+
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+}
+
+void loop() {
+  if (state == MASTER_WORKING) {
+    Serial.println("WORKING ROUTINE");
+
+    checkStatus();
+    schedule();
+    checkPercent();
+    checkResult();
+    printTime();
   }
-  
-  void loop() {
-    if (state == MASTER_WORKING){
-      Serial.println("WORKING ROUTINE");
-
-      check_stat();
-      schedule();
-      check_percent();
-      check_result();
-      printPercents();
-    }
-    else if (state == MASTER_IDLE){
-      Serial.println("IDLE ROUTINE");
-    }
-    delay(2000);
+  else if (state == MASTER_IDLE) {
+    Serial.println("IDLE ROUTINE");
   }
+  delay(2000);
+}
 
-  // check each slave status and update variables
-  void check_stat(){
-    Serial.println("CHECKING STATUS");
-    
-    for (int i = 0; i < slaves; i++){
-      Wire.beginTransmission(slaves_addresses[i]); // transmit to device
-      Wire.write("STAT");                          // sends 4 bytes
-      Wire.endTransmission();                      // ends transmission
+// check each slave status and update variables
+void checkStatus() {
+  Serial.println("CHECKING STATUS");
 
-      
-      Wire.requestFrom(slaves_addresses[i], 1);    // request 1 bytes (state) from slave device
+  for (int i = 0; i < slavesCnt; i++) {
+    Wire.beginTransmission(slaveAddresses[i]); // transmit to device
+    Wire.write("STAT");                          // sends 4 bytes
+    Wire.endTransmission();                      // ends transmission
 
-      if (Serial.available() < 1){
-        Serial.printf("Slave %s is dead!\n",slaves_names[i]);
+    Wire.requestFrom(slaveAddresses[i], 1);    // request 1 bytes (state) from slave device
+
+    if (Serial.available() < 1) {
+      msgSlaveDead(i);
+      slaveStates[i] = SLAVE_UNKNOWN;
+      continue;
+    }
+    if (Serial.available() > 1) {
+      msgSlaveDrunk(i);
+      dumpSerial();
+      continue;
+    }
+
+    byte slaveState = Wire.read(); // reads state
+
+    switch (slaveState) {
+      case SLAVE_IDLE:
+      case SLAVE_WORKING:
+      case SLAVE_RETURN:
+        Serial.print("Slave ");
+        Serial.print(slaveNames[i]);
+        Serial.print(" is in state ");
+        Serial.println(slaveState);
+        slaveStates[i] = slaveState;
+        break;
+      default:
+        Serial.print("Slave ");
+        Serial.print(slaveNames[i]);
+        Serial.println("is fucked up!");
+        slaveStates[i] = SLAVE_UNKNOWN;
+        continue;
+    }
+  }
+}
+
+void checkPercent() {
+  Serial.println("CHECKING PERCENT");
+
+  for (int i = 0; i < slavesCnt; i++) {
+    Wire.beginTransmission(slaveAddresses[i]); // transmit to device #8
+    Wire.write("PERC");         // sends 4 bytes
+    Wire.endTransmission();
+
+    Wire.requestFrom(slaveAddresses[i], 1);    // request 1 bytes from slave device
+
+    if (Serial.available() == 1) {
+      byte percent = Wire.read();
+
+      // checking validity
+      if (percent < 0 || percent > 100) {
+        msgSlaveDrunk(i);
         continue;
       }
-      if (Serial.available() > 1){
-        Serial.print("Slave %s is drunk!\n",slaves_names[i]);
-        continue;
-      }
-      
-      byte slave_state = Wire.read(); // reads state
-      
-      switch(slave_state){
-        case SLAVE_IDLE:
-          Serial.printf("Slave %s is IDLE",slaves_names[i]);
-          break;
-         case SLAVE_WORKING:
-          Serial.printf("Slave %s is IDLE",slaves_names[i]);
-          break;
-         case SLAVE_RETURNING:
-          Serial.printf("Slave %s is RETURNING",slaves_names[i]);
-          break;
-         default:
-          Serial.printf("Slave %s is fucked up",slave_names[i]);
-          continue;  
-      }
-      
-      slaves_states[i] = slave_state; // sets state
-    }
-  }
+      else {
+        Serial.print("Slave ");
+        Serial.print(slaveNames[i]);
+        Serial.print(" progress is ");
+        Serial.print(percent);
+        Serial.print("%\n");
 
-  void check_percent(){
-    Serial.println("CHECKING PERCENT");
-    
-    for (int i = 0; i < slaves; i++){
-      Wire.beginTransmission(slaves_addresses[i]); // transmit to device #8
-      Wire.write("PERC");         // sends 4 bytes
-      Wire.endTransmission();
-
-      Wire.requestFrom(slaves_addresses[i], 1);    // request 1 bytes from slave device
-
-      if (Serial.available() == 1){
-        byte percent = Wire.read();
-      
-        // checking validity
-        if (percent < 0 || percent > 100){
-          Serial.print("Slave ");
-          Serial.print(slaves_names[i]);
-          Serial.print(" is drunk. Percent is fucked up.\n");
-        }
-        else {
-          Serial.print("Slave ");
-          Serial.print(slaves_names[i]);
-          Serial.print(" progress is ");
-          Serial.print(percent);
-          Serial.print("%\n");
-
-          slaves_percents[i] = percent;
-        }
-      }
-      else if (Serial.available() > 1 ){ 
-        Serial.printf("Slave %s is drunk!", slaves_names[i]);
-        // handle available (read until zero ?)
-        continue;
-      }
-      else if (Serial.available() == 0 ){
-        Serial.printf("Slave %s is dead!",slaves_names[i]);
-        continue;
+        slavePercents[i] = percent;
       }
     }
-  }
-
-  void check_result(){
-    Serial.println("CHECKING RESULT");
-  }
-
-  void schedule(){
-    Serial.println("SCHEDULING");
-    
-    for (int i = 0; i < slaves; i++){
-       if (slaves_states[i] == SLAVE_IDLE){ // only if slave is idle
-          Serial.print("Scheduling %s ",slaves_names[i]);
-        
-          Wire.beginTransmission(slaves_addresses[i]); // transmit to device #8
-          Wire.write("TASK");         // sends 4 bytes
-          
-          Wire.write(x);     /         // sends 4 bytes
-          Wire.write(y);        /      // sends 4 bytes
-          Wire.endTransmission(); 
-       }
-    }
-  }
-
-
-  // qsort requires you to create a sort function
-  int sort_desc(const int *cmp1, const int *cmp2)
-  {
-    // Need to cast the void * to int *
-    int a = *cmp1;
-    int b = *cmp2;
-    // The comparison
-    Serial.print("SortDesc ");
-    Serial.print(a);
-    Serial.print(" ");
-    Serial.println(b);
-    return slaves_time[a] > slaves_time[b] ? -1 : (slaves_time[a] < slaves_time[b] ? 1 : 0);
-    // A simpler, probably faster way:
-    //return b - a;
-  }
-  
-  void printPercents(){
-    int sorted[slaves] = {};
-    for (int i = 0; i < slaves; i++){
-      sorted[i] = i;
-    }
-
-
-    //qsort(sorted, slaves,slaves,sort_desc);
-    int tmp;
-    for (int i = 0; i < slaves -1; i++){
-      for (int j = i+1; j < slaves;j++){
-        if (slaves_time[i] > slaves_time[j]){
-          tmp = sorted[i];
-          sorted[i] = sorted[j];
-          sorted[j] = tmp;
-        }
-      }
-    }
-    
-    for (int i = 0 ; i < slaves; i++){
+    else if (Serial.available() > 1 ) {
       Serial.print("Slave ");
-      Serial.print(slaves_names[sorted[i]]);
-      Serial.print(", remaining time: ");
-      Serial.print(slaves_time[sorted[i]]);
-      Serial.print("\n");
+      Serial.print(slaveNames[i]);
+      Serial.println("is drunk!");
+      // handle available (read until zero ?)
+      continue;
+    }
+    else if (Serial.available() == 0 ) {
+      Serial.print("Slave ");
+      Serial.print(slaveNames[i]);
+      Serial.println("is Dead!");
+      continue;
     }
   }
+}
 
-  void printNumbers(){
-    
+void checkResult() {
+  Serial.println("CHECKING RESULT");
+}
+
+void schedule() {
+  Serial.println("SCHEDULING");
+  if (currentChunk.value >= to.value){
+      Serial.println("MASTER FINISHED SCHEDULING");
+      return;
   }
   
-  
-  void serialEvent(){
-    Serial.println(Serial.available());
+  for (int i = 0; i < slavesCnt; i++) {
     
-    if (state == MASTER_IDLE){ 
-      char input[Serial.available()];
-      byte pos = 0;
-      while (Serial.available()){
-        input[pos++] = (char)Serial.read();
-      }
-
-        /* get the first token */
-      char* token = strtok(input," ");
-
-      if (strcmp(token,"PROSTI")){
-        Serial.print("Unknown command '");
-        Serial.print(token);
-        Serial.print("'\n");
-        return;
-      }
-
-//       /* walk through other tokens */
-//       while( token != NULL ) {
-//          Serial.println(token);
-//          token = strtok(NULL, " ");
-//       }
-
-      token = strtok(NULL, " ");
-      from = atol(token);
-
-      token = strtok(NULL, " ");
-      to = atol(token);
-
-      token = strtok(NULL, " ");
-      if (token != NULL){
-        Serial.println("Invalid number of args!");
-        return;
-      }
+    if (slaveStates[i] == SLAVE_IDLE) { // only if slave is idle
+      msgScheduling(i);
       
-      Serial.println(from);
-      Serial.println(to);
-      state = MASTER_WORKING;
+      LongNumber upperBound;
+      upperBound.value = currentChunk.value + CHUNK_SIZE > to.value ? to.value : currentChunk.value + CHUNK_SIZE;
+                 
+      Wire.beginTransmission(slaveAddresses[i]); // transmit to device
+      Wire.write("TASK");         // sends 4 bytes
+      Wire.write(from.value);     // sends 4 bytes
+      Wire.write(to.value);       // sends 4 bytes
+      Wire.endTransmission();
+      
+      currentChunk.value = upperBound.value;
+
+      if (currentChunk.value >= to.value){
+        break;
+      }
     }
-    else { // dump input
-      while (Serial.available()){ Serial.read();}
+  }
+}
+
+
+// qsort requires you to create a sort function
+int sort_desc(const int *cmp1, const int *cmp2)
+{
+  // Need to cast the void * to int *
+  int a = *cmp1;
+  int b = *cmp2;
+  // The comparison
+  Serial.print("SortDesc ");
+  Serial.print(a);
+  Serial.print(" ");
+  Serial.println(b);
+  return slaveTime[a] > slaveTime[b] ? -1 : (slaveTime[a] < slaveTime[b] ? 1 : 0);
+  // A simpler, probably faster way:
+  //return b - a;
+}
+
+
+// prints sorted estimated time for finishing slaves
+void printTime() {
+  int sorted[slavesCnt] = {};
+  for (int i = 0; i < slavesCnt; i++) {
+    sorted[i] = i;
+  }
+
+  //qsort(sorted, slaves,slaves,sort_desc);
+  int tmp;
+  for (int i = 0; i < slavesCnt - 1; i++) {
+    for (int j = i + 1; j < slavesCnt; j++) {
+      if (slaveTime[i] > slaveTime[j]) {
+        tmp = sorted[i];
+        sorted[i] = sorted[j];
+        sorted[j] = tmp;
+      }
     }
   }
 
+  for (int i = 0 ; i < slavesCnt; i++) {
+    msgSlaveEta(sorted[i]);
+  }
+}
+
+void printNumbers() {
+
+}
+
+
+void serialEvent() {
+  Serial.println(Serial.available());
+
+  if (state == MASTER_IDLE) {
+    char input[Serial.available()];
+    byte pos = 0;
+    while (Serial.available()) {
+      input[pos++] = (char)Serial.read();
+    }
+
+    /* get the first token */
+    char* token = strtok(input, " ");
+
+    if (strcmp(token, "PROSTI")) {
+      Serial.print("Unknown command '");
+      Serial.println(token);
+      return;
+    }
+
+    token = strtok(NULL, " ");
+    from.value = atol(token);
+
+    token = strtok(NULL, " ");
+    to.value = atol(token);
+
+    token = strtok(NULL, " ");
+    if (token != NULL) {
+      Serial.println("Invalid number of args!");
+      return;
+    }
+
+    //DEBUG messages
+    Serial.println(from.value);
+    Serial.println(to.value);
+    state = MASTER_WORKING;
+  }
+  // dump input
+  dumpSerial();
+}
+
+void dumpSerial(){
+  while (Wire.available()) {
+    Wire.read();
+  }
+}
+
+
+void msgSlaveDrunk(int i){
+      Serial.print("Slave ");
+      Serial.print(slaveNames[i]);
+      Serial.println("is drunk!");
+}
+
+void msgSlaveDead(int i){
+        Serial.print("Slave ");
+      Serial.print(slaveNames[i]);
+      Serial.println("is dead!");
+}
+
+void msgSlaveEta(int i){
+    Serial.print("Slave ");
+    Serial.print(slaveNames[i]);
+    Serial.print(" - ETA ");
+    Serial.println(slaveTime[i]);
+}
+
+void msgScheduling(int i){
+      Serial.print("Scheduling ");
+      Serial.println(slaveNames[i]);
+}
+
+
+void msgSlaveProgress(int i){
+      Serial.print("Slave ");
+      Serial.print(slaveNames[i]);
+      Serial.print(" progress is ");
+      Serial.print(slavePercents[i]);
+      Serial.println("%");
+}
 
 
 
@@ -295,12 +342,3 @@
 
 
 
-
-
-
-
-
-
-
-
-  

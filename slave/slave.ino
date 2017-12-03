@@ -38,6 +38,11 @@ long lowerBound; // wrap in LongNumber before sending if error with memory!
 long upperBound;
 long currentNumber = 0;
 
+long startedTime = 0;
+long currentTime = 0;
+
+long calcSpeed = 0;
+
 volatile byte lastMessage;
 
 
@@ -48,10 +53,12 @@ void setup() {
   Wire.onRequest(requestEvent);
   Serial.begin(9600);
 
-  lowerBound = 100000;
-  upperBound = 100200;
+  lowerBound = 1000000000;
+  upperBound = 1000000200;
   state = SLAVE_WORKING;
   currentNumber = lowerBound;
+  
+  startedTime = millis();
 }
 
 void loop() {
@@ -59,12 +66,19 @@ void loop() {
     if (currentNumber < upperBound) {
       Serial.print("Checking ");
       Serial.println(currentNumber);
-      
+          
       if (isPrime(currentNumber)) {
         primeBuffer[bufferSize++] = currentNumber;
         Serial.println(currentNumber);
       }
       currentNumber++;
+      currentTime = millis();
+
+      double cspeed = (double)(currentTime-startedTime)/(double)(currentNumber - lowerBound);
+
+      eta = cspeed*(upperBound - currentNumber);
+      Serial.print("ETA: ");
+      Serial.println(eta);
       
       double dpercent = 100.0/(upperBound - lowerBound) * (currentNumber - lowerBound);
       percent = (byte)dpercent;

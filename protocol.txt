@@ -4,13 +4,24 @@ SLAVE  -> MASTER: "TASK OK" ili "TASK BS"
 
 Checking slave state:
 
+SLAVE STATES:
+WORKING 0
+RETURN  1
+IDLE    2
+
+MASTER STATES:
+WORKING 0
+IDLE    1
+
+// returns 1 byte
 MASTER -> SLAVE "STAT"
-SLAVE -> MASTER "WRK"
-SLAVE -> MASTER "RTR" ?! STATE OF RETURNING RESULT IF RETURNING EACH
-SLAVE -> MASTER "IDL"
+SLAVE -> MASTER "0"
+SLAVE -> MASTER "1" ?! STATE OF RETURNING RESULT IF RETURNING EACH
+SLAVE -> MASTER "2"
 
 Checking slaves:
 
+// returns 1 bytes (byte)
 MASTER -> SLAVE:  "PERC"
 SLAVE  -> MASTER: "0"
 SLAVE  -> MASTER: "10"
@@ -23,9 +34,9 @@ SLAVE  -> MASTER: "NOT_FINISHED"
 SLAVE  -> MASTER: "RESULT X" X is long number of results
 SLAVE  -> MASTER: send 4 byte for each result
 
-
 Evaluating time:
 
+// returns 4 bytes (long)
 MASTER -> SLAVE: "TIME"
 SLAVE  -> MASTER: "x" long number (4 bytes)
 

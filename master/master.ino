@@ -34,7 +34,7 @@ const PROGMEM String slaveNames[]   = { "SLAVE1", "SLAVE2", "SLAVE3" };
 const PROGMEM byte slavesCnt = 3;
 
 // slaves variables
-//volatile byte slaves_states[]   = {SLAVE_UNKNOWN, SLAVE_UNKNOWN, SLAVE_UNKNOWN};
+//volatile byte slaveStates[]   = {SLAVE_UNKNOWN, SLAVE_UNKNOWN, SLAVE_UNKNOWN};
 volatile byte slaveStates[]   = {SLAVE_IDLE, SLAVE_IDLE, SLAVE_IDLE};
 volatile byte slavePercents[] = {0,   0,   0  };
 volatile long slaveTime[]     = {2,   5,   0  };
@@ -89,7 +89,7 @@ void checkStatus() {
 
     if (Serial.available() < 1) {
       msgSlaveDead(i);
-      slaveStates[i] = SLAVE_UNKNOWN;
+      //slaveStates[i] = SLAVE_UNKNOWN;
       continue;
     }
     if (Serial.available() > 1) {
@@ -111,10 +111,8 @@ void checkStatus() {
         slaveStates[i] = slaveState;
         break;
       default:
-        Serial.print("Slave ");
-        Serial.print(slaveNames[i]);
-        Serial.println("is fucked up!");
-        slaveStates[i] = SLAVE_UNKNOWN;
+        //slaveStates[i] = SLAVE_UNKNOWN;
+        msgSlaveDrunk(i);
         continue;
     }
   }
@@ -138,15 +136,8 @@ void checkPercent() {
         msgSlaveDrunk(i);
         continue;
       }
-      else {
-        Serial.print("Slave ");
-        Serial.print(slaveNames[i]);
-        Serial.print(" progress is ");
-        Serial.print(percent);
-        Serial.print("%\n");
-
-        slavePercents[i] = percent;
-      }
+      slavePercents[i] = percent;
+      msgSlaveProgress(i);
     }
     else if (Serial.available() > 1 ) {
       Serial.print("Slave ");
@@ -270,6 +261,8 @@ void serialEvent() {
     token = strtok(NULL, " ");
     to.value = atol(token);
 
+    currentChunk.value = from.value;
+
     token = strtok(NULL, " ");
     if (token != NULL) {
       Serial.println("Invalid number of args!");
@@ -299,9 +292,9 @@ void msgSlaveDrunk(int i){
 }
 
 void msgSlaveDead(int i){
-        Serial.print("Slave ");
-      Serial.print(slaveNames[i]);
-      Serial.println("is dead!");
+    Serial.print("Slave ");
+    Serial.print(slaveNames[i]);
+    Serial.println("is dead!");
 }
 
 void msgSlaveEta(int i){

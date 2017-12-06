@@ -14,7 +14,7 @@
 #define SLAVE_UNKNOWN   3
 
 // master constants
-#define BUFFER_SIZE 50
+#define BUFFER_SIZE 30
 
 
 // union for long numbers
@@ -42,7 +42,7 @@ volatile long slaveTime[]     = {0};
 
 // primes
 // buffer of primes per slave
-long primesBuffer[slavesCnt][BUFFER_SIZE + 20];
+long primesBuffer[slavesCnt][BUFFER_SIZE + 30];
 // filled buffer per slave
 long primes[slavesCnt] = {0};
 
@@ -130,6 +130,7 @@ void checkStatus() {
     Wire.write("STAT");                          // sends 4 bytes
     Wire.endTransmission();                      // ends transmission
     
+    delay(50);
     Wire.requestFrom(slaveAddresses[i], 1);    // request 1 bytes (state) from slave device
     if (Wire.available() < 1) {
       msgSlaveDead(i);
@@ -159,6 +160,7 @@ void checkResult() {
       Wire.write("RSLT");
       Wire.endTransmission();
       LongNumber r;
+      delay(50);
       Wire.requestFrom(slaveAddresses[i], 4);
       r.avalue[0] = Wire.read();
       r.avalue[1] = Wire.read();
@@ -172,6 +174,7 @@ void checkResult() {
         Wire.write("RSLT");
         Wire.endTransmission();
 
+        delay(50);
         Wire.requestFrom(slaveAddresses[i], 4); 
         r.avalue[0] = Wire.read();
         r.avalue[1] = Wire.read();
@@ -211,7 +214,7 @@ void schedule() {
       Wire.write(upperBound.avalue[2]);
       Wire.write(upperBound.avalue[3]);
       Wire.endTransmission();
-
+      
       currentChunk.value = upperBound.value; // updates current chunk
       qAdd(i); // adds task in queue for printing
       
@@ -234,7 +237,8 @@ void checkTime() {
       Wire.beginTransmission(slaveAddresses[i]); // transmit to device
       Wire.write("TIME");         // sends 4 bytes
       Wire.endTransmission();
-  
+
+      delay(50);
       Wire.requestFrom(slaveAddresses[i], 4);
       LongNumber eta;
       eta.avalue[0] = Wire.read();

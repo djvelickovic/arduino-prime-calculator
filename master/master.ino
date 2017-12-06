@@ -7,13 +7,15 @@
 #define MASTER_WORKING   1
 
 // slave states
-#define SLAVE_IDLE      0
+
+#define SLAVE_WORKING   0
 #define SLAVE_RETURN    1 //?!
-#define SLAVE_WORKING   2
+#define SLAVE_IDLE      2
 #define SLAVE_UNKNOWN   3
 
 // master constants
 #define BUFFER_SIZE 50
+
 
 
 // union for long numbers
@@ -33,6 +35,9 @@ const PROGMEM int slaveAddresses[] = { 8};
 const PROGMEM String slaveNames[]   = { "SLAVE1"};
 const PROGMEM byte slavesCnt = 1;
 
+int queue[slavesCnt*2+1];
+int qLen = 0;
+
 // slaves variables
 //volatile byte slaveStates[]   = {SLAVE_UNKNOWN, SLAVE_UNKNOWN, SLAVE_UNKNOWN};
 volatile byte slaveStates[]   = {SLAVE_IDLE};
@@ -43,7 +48,7 @@ volatile long slaveTime[]     = {2};
 // master variables
 
 // primes
-long primesBuffer[slavesCnt][BUFFER_SIZE];
+long primesBuffer[slavesCnt][BUFFER_SIZE+20];
 long primes[slavesCnt] = {0};
 
 // prime searching interval
@@ -54,27 +59,74 @@ LongNumber currentChunk;
 // master current state
 volatile byte state = MASTER_IDLE;
 
+int sorted[slavesCnt] = {};
 
 void setup() {
   Serial.begin(9600);
   Wire.begin();
+
+  noInterrupts();
+
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TCNT1= 0;
+  OCR1A = 62499; // vrednost za poređenje brojača
+  TCCR1B |= (1 << WGM12); // CTC – režim poređenja
+  TCCR1B |= (1 << CS12); // preskaler deli sa 256
+  TIMSK1 |= (1 << OCIE1A); // uključujemo tajmerski prekid
+  interrupts(); // uključujemo prekide 
+
+  for (int i = 0; i < slavesCnt; i++) {
+    sorted[i] = i;
+  }
 }
 
+
+ISR(TIMER1_COMPA_vect) {
+
+  //qsort(sorted, slaves,slaves,sort_desc);
+  int tmp;
+  for (int i = 0; i < slavesCnt - 1; i++) {
+    for (int j = i + 1; j < slavesCnt; j++) {
+      if (slaveTime[i] > slaveTime[j]) {
+        tmp = sorted[i];
+        sorted[i] = sorted[j];
+        sorted[j] = tmp;
+      }
+    }
+  }
+
+  for (int i = 0 ; i < slavesCnt; i++) {
+    msgSlaveEta(sorted[i]);
+  }
+}
+
+
+
+
 void loop() {
+  checkStatus();
+  checkTime();
   if (state == MASTER_WORKING) {
     Serial.println("WORKING ROUTINE");
-
-    checkStatus();
     schedule();
     //checkPercent();
-    checkResult();
-    //printTime();
-    printNumbers();
+    
   }
   else if (state == MASTER_IDLE) {
     Serial.println("IDLE ROUTINE");
   }
-  delay(2000);
+
+  if (qLen > 0){
+    checkResult();
+    printNumbers();
+  }
+  if (state == MASTER_IDLE){
+    delay(1500);  
+  }
+  else{
+    delay (100);
+  }
 }
 
 // check each slave status and update variables
@@ -112,7 +164,7 @@ void checkStatus() {
         slaveStates[i] = slaveState;
         break;
       default:
-        //slaveStates[i] = SLAVE_UNKNOWN;
+        slaveStates[i] = SLAVE_UNKNOWN;
         msgSlaveDrunk(i);
         break;
     }
@@ -161,6 +213,9 @@ void checkResult() {
 
   for (int i = 0; i < slavesCnt; i++){
     if (slaveStates[i] == SLAVE_RETURN){
+        Wire.beginTransmission(slaveAddresses[i]);
+        Wire.write("RSLT");
+        Wire.endTransmission();
         LongNumber r;
         Wire.requestFrom(slaveAddresses[i],4);
         r.avalue[0] = Wire.read();
@@ -168,14 +223,18 @@ void checkResult() {
         r.avalue[2] = Wire.read();
         r.avalue[3] = Wire.read();
        while(r.value != 0){
+        
+          primesBuffer[i][primes[i]++] = r.value;
+          
+          Wire.beginTransmission(slaveAddresses[i]);
+          Wire.write("RSLT");
+          Wire.endTransmission();
+          
           Wire.requestFrom(slaveAddresses[i],4);
           r.avalue[0] = Wire.read();
           r.avalue[1] = Wire.read();
           r.avalue[2] = Wire.read();
           r.avalue[3] = Wire.read();
-
-          primesBuffer[i][primes[i]++] = r.value;
-
        }
     }
   }
@@ -185,6 +244,7 @@ void schedule() {
   Serial.println("SCHEDULING");
   if (currentChunk.value >= to.value){
       Serial.println("MASTER FINISHED SCHEDULING");
+      state = MASTER_IDLE;
       return;
   }
 
@@ -194,17 +254,30 @@ void schedule() {
       msgScheduling(i);
 
       LongNumber upperBound;
-      upperBound.value = currentChunk.value + getDelta();
-      upperBound.value = currentChunk.value > to.value ? to.value : currentChunk.value;
-
+      upperBound.value = getNewUpperBound();
+//      upperBound.value = currentChunk.value > to.value ? to.value : currentChunk.value;/
+      
       Wire.beginTransmission(slaveAddresses[i]); // transmit to device
       Wire.write("TASK");         // sends 4 bytes
-      Wire.write(from.value);     // sends 4 bytes
-      Wire.write(to.value);       // sends 4 bytes
+      Wire.write(currentChunk.avalue[0]);
+      Wire.write(currentChunk.avalue[1]);
+      Wire.write(currentChunk.avalue[2]);
+      Wire.write(currentChunk.avalue[3]);
+      
+      Wire.write(upperBound.avalue[0]);       // sends 4 bytes
+      Wire.write(upperBound.avalue[1]);
+      Wire.write(upperBound.avalue[2]);
+      Wire.write(upperBound.avalue[3]);
       Wire.endTransmission();
 
+      Serial.print("SENT ");
+      Serial.print(currentChunk.value);
+      Serial.print(" and ");
+      Serial.println(upperBound.value);
+      
       currentChunk.value = upperBound.value;
-
+      qAdd(i);
+      
       if (currentChunk.value >= to.value){
         break;
       }
@@ -212,52 +285,61 @@ void schedule() {
   }
 }
 
+void checkTime(){
+  for (int i = 0; i < slavesCnt; i++){   
+    Wire.beginTransmission(slaveAddresses[i]); // transmit to device
+    Wire.write("TIME");         // sends 4 bytes
+    Wire.endTransmission();
 
-// prints sorted estimated time for finishing slaves
-void printTime() {
-  int sorted[slavesCnt] = {};
-  for (int i = 0; i < slavesCnt; i++) {
-    sorted[i] = i;
+    Wire.requestFrom(slaveAddresses[i],4);
+    LongNumber eta;
+    eta.avalue[0] = Wire.read();
+    eta.avalue[1] = Wire.read();
+    eta.avalue[2] = Wire.read();
+    eta.avalue[3] = Wire.read();
+    
+    slaveTime[i] = eta.value;
+    
   }
 
-  //qsort(sorted, slaves,slaves,sort_desc);
-  int tmp;
-  for (int i = 0; i < slavesCnt - 1; i++) {
-    for (int j = i + 1; j < slavesCnt; j++) {
-      if (slaveTime[i] > slaveTime[j]) {
-        tmp = sorted[i];
-        sorted[i] = sorted[j];
-        sorted[j] = tmp;
-      }
-    }
-  }
 
-  for (int i = 0 ; i < slavesCnt; i++) {
-    msgSlaveEta(sorted[i]);
-  }
+  
 }
 
+
 void printNumbers() {
-  int sorted[slavesCnt] = {};
-  for (int i = 0; i < slavesCnt; i++) {
-    sorted[i] = i;
-  }
+  Serial.println("PRINTING NUMBERS");
+//  int sorted[slavesCnt] = {};
+//
+//  for (int i = 0; i < slavesCnt; i++) {
+//    sorted[i] = i;
+//  }
+//  
+//  //qsort(sorted, slaves,slaves,sort_desc);
+//  int tmp;
+//  for (int i = 0; i < slavesCnt - 1; i++) {
+//    for (int j = i + 1; j < slavesCnt; j++) {
+//      if (primesBuffer[i][0] > primesBuffer[j][0]) {
+//        tmp = sorted[i];
+//        sorted[i] = sorted[j];
+//        sorted[j] = tmp;
+//      }
+//    }
+//  }
 
-  //qsort(sorted, slaves,slaves,sort_desc);
-  int tmp;
-  for (int i = 0; i < slavesCnt - 1; i++) {
-    for (int j = i + 1; j < slavesCnt; j++) {
-      if (primesBuffer[i][0] > primesBuffer[j][0]) {
-        tmp = sorted[i];
-        sorted[i] = sorted[j];
-        sorted[j] = tmp;
-      }
+  while (1){
+    int head = qPeek();
+    if (head == -1){
+      return;
     }
-  }
-
-  for (int i = 0 ; i < slavesCnt; i++) {
-    printArray(i);
-    primes[i] = 0;
+    if (primes[head] > 0){
+      printArray(head);
+      primes[head] = 0;
+      qPoll();
+    }
+    else {
+      return;
+    }
   }
 }
 
@@ -304,23 +386,18 @@ void serialEvent() {
   dumpSerial();
 }
 
-long getDelta(){
-  if (!(currentChunk.value >= to.value)){
-    return -1;
+long getNewUpperBound(){
+  for (long i = currentChunk.value; i < to.value; i += 50){
+    if (pi(i) - pi(currentChunk.value) >= BUFFER_SIZE){
+      return i;
+    }
   }
-  long delta = 0;
-  int a;
-  for (long i = currentChunk.value; pi(i) - pi(currentChunk.value) < BUFFER_SIZE && i < to.value;){
-    a = ((to.value - i) < 100) ? (to.value - i) : 100;
-    i += a;
-    delta += a;
-  }
-  return delta;
+  return to.value;
 }
 
 
-int pi(long n){
-  return(n==0) ? 0 : (int) (n/log(n));
+long pi(long n){
+  return (n==0) ? 0 : (long) (n/log(n));
 }
 
 
@@ -333,9 +410,9 @@ void dumpSerial(){
 }
 
 void printArray(int i){
-    for (int cnt = 0; cnt < primes[i];cnt++){
-      Serial.println(primesBuffer[i][cnt]);
-    }
+  for (int cnt = 0; cnt < primes[i];cnt++){
+    Serial.println(primesBuffer[i][cnt]);
+  }
 }
 
 void msgSlaveDrunk(int i){
@@ -353,7 +430,7 @@ void msgSlaveDead(int i){
 void msgSlaveEta(int i){
     Serial.print("Slave ");
     Serial.print(slaveNames[i]);
-    Serial.print(" - ETA ");
+    Serial.print(" - ETA: ");
     Serial.println(slaveTime[i]);
 }
 
@@ -370,3 +447,42 @@ void msgSlaveProgress(int i){
       Serial.print(slavePercents[i]);
       Serial.println("%");
 }
+
+
+
+
+int qPeek(){
+  return qLen > 0 ? queue[0] : -1;
+}
+
+int qPoll(){
+  if (qLen <= 0){
+    return -1;
+  }
+  int h = queue[0];
+  for (int i = 1; i < qLen;i++){
+    queue[i-1] = queue[i];
+  }
+  qLen--;
+  return h;
+}
+
+int qAdd(int n){
+  queue[qLen++] = n;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

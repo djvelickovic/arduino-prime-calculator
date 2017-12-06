@@ -27,7 +27,7 @@ const int address = 8;
 
 volatile byte state = SLAVE_IDLE;
 volatile byte percent = 0;
-volatile long eta = 0;
+volatile LongNumber eta;
 
 long primeBuffer[BUFFER_SIZE] ;
 
@@ -65,26 +65,26 @@ void setup() {
 void loop() {
   if (state == SLAVE_WORKING) {
     if (currentNumber < upperBound) {
-      Serial.print("Checking ");
-      Serial.println(currentNumber);
+//      Serial.print("Checking ");
+//      Serial.println(currentNumber);
 
       if (isPrime(currentNumber)) {
         primeBuffer[bufferSize++] = currentNumber;
-        Serial.println(currentNumber);
+//        Serial.println(currentNumber);
       }
       currentNumber++;
       currentTime = millis();
 
       double cspeed = (double)(currentTime-startedTime)/(double)(currentNumber - lowerBound);
 
-      eta = cspeed*(upperBound - currentNumber);
+      eta.value = cspeed*(upperBound - currentNumber);
       Serial.print("ETA: ");
-      Serial.println(eta);
+      Serial.println(eta.value);
 
       double dpercent = 100.0/(upperBound - lowerBound) * (currentNumber - lowerBound);
       percent = (byte)dpercent;
-      Serial.print("Percent ");
-      Serial.println(percent);
+//      Serial.println(percent);
+//      Serial.print("Percent ");
     }
     else {
       Serial.println("Slave in return");
@@ -93,7 +93,9 @@ void loop() {
     }
   }
   else { // idle
-    delay(100);
+    Serial.print(state);
+    Serial.println(" IDLE");
+    delay(1000);
   }
 }
 
@@ -122,6 +124,7 @@ bool isPrime(long number) {
 
 
 void requestEvent() {
+  Serial.print("MESSAGE ");
   Serial.println(lastMessage);
   switch (lastMessage) {
     case TASK:
@@ -139,21 +142,37 @@ void requestEvent() {
       Wire.write(percent);
       break;
     case TIME:
-      Wire.write(eta);
+      Wire.write(eta.avalue[0]);
+      Wire.write(eta.avalue[1]);
+      Wire.write(eta.avalue[2]);
+      Wire.write(eta.avalue[3]);
+      Serial.print("ETA: ");
+      Serial.println(eta.value);
       break;
     case RSLT:
       if (state == SLAVE_RETURN) {
         if (bufferPosition < bufferSize) {
-          Wire.write(primeBuffer[bufferPosition++]);
+          LongNumber l;
+          l.value = primeBuffer[bufferPosition++];
+          Wire.write(l.avalue[0]);
+          Wire.write(l.avalue[1]);
+          Wire.write(l.avalue[2]);
+          Wire.write(l.avalue[3]);
+          Serial.print("Returned ");
+          Serial.println(primeBuffer[bufferPosition-1]);
         }
         else {
-          long resp = 0;
-          Wire.write(resp);
+          LongNumber resp;
+          resp.value = 0;
+          Wire.write(resp.avalue[0]);
+          Wire.write(resp.avalue[1]);
+          Wire.write(resp.avalue[2]);
+          Wire.write(resp.avalue[3]);
           Serial.println("Slave in idle");
           state = SLAVE_IDLE;
           bufferPosition = 0;
           bufferSize = 0;
-          eta = 0;
+          eta.value = 0;
           percent = 0;
         }
       }
@@ -165,8 +184,8 @@ void requestEvent() {
 
 void receiveEvent() {
   String message = "";
-  int avail = Wire.available();
-  if (avail < 4) {
+  int avail = 4;
+  if (Wire.available() < 4) {
     //ERROR
     return;
   }
@@ -178,12 +197,14 @@ void receiveEvent() {
 
   if (message.equals("TASK")) { // task
     lastMessage = TASK;
-
-    if (Wire.available() != 8) {
-      while (Wire.available()) {
-        Wire.read();
-      }
-    }
+    Serial.print("U TASKU ");
+    Serial.println(Wire.available());
+//    if (Wire.available() != 8) {
+//      while (Wire.available()) {
+//        Wire.read();
+//      }
+//      return;
+//    }
 
     LongNumber tmp;
     tmp.avalue[0] = Wire.read();
@@ -191,13 +212,19 @@ void receiveEvent() {
     tmp.avalue[2] = Wire.read();
     tmp.avalue[3] = Wire.read();
     lowerBound = tmp.value;
-
+    currentNumber = lowerBound;
+    
     tmp.avalue[0] = Wire.read();
     tmp.avalue[1] = Wire.read();
     tmp.avalue[2] = Wire.read();
     tmp.avalue[3] = Wire.read();
     upperBound = tmp.value;
 
+    Serial.print("Recieved ");
+    Serial.print(lowerBound);
+    Serial.print(" and ");
+    Serial.println(upperBound);
+    
     Serial.println("Slave in Working");
     state = SLAVE_WORKING;
     startedTime = millis();

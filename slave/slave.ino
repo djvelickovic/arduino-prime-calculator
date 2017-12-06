@@ -53,12 +53,13 @@ void setup() {
   Wire.onRequest(requestEvent);
   Serial.begin(9600);
 
-  lowerBound = 1000000000;
-  upperBound = 1000000200;
-  state = SLAVE_WORKING;
-  currentNumber = lowerBound;
-  
+  //lowerBound = 1000000000;
+  //upperBound = 1000000200;
+  state = SLAVE_IDLE;
+  //currentNumber = lowerBound;
+
   startedTime = millis();
+  Serial.println("ZIV SAM");
 }
 
 void loop() {
@@ -66,7 +67,7 @@ void loop() {
     if (currentNumber < upperBound) {
       Serial.print("Checking ");
       Serial.println(currentNumber);
-          
+
       if (isPrime(currentNumber)) {
         primeBuffer[bufferSize++] = currentNumber;
         Serial.println(currentNumber);
@@ -79,13 +80,14 @@ void loop() {
       eta = cspeed*(upperBound - currentNumber);
       Serial.print("ETA: ");
       Serial.println(eta);
-      
+
       double dpercent = 100.0/(upperBound - lowerBound) * (currentNumber - lowerBound);
       percent = (byte)dpercent;
       Serial.print("Percent ");
       Serial.println(percent);
     }
     else {
+      Serial.println("Slave in return");
       state = SLAVE_RETURN;
       printAllNumbers();
     }
@@ -105,7 +107,7 @@ bool isPrime(long number) {
   if (number % 2 == 0) {
     return false;
   }
-  
+
   double number_sqrt = sqrt(number);
   long lnsqrt = (long)number_sqrt;
   for (long i = 3; i < lnsqrt; i += 2) {
@@ -120,6 +122,7 @@ bool isPrime(long number) {
 
 
 void requestEvent() {
+  Serial.println(lastMessage);
   switch (lastMessage) {
     case TASK:
       if (state == SLAVE_WORKING) {
@@ -144,6 +147,9 @@ void requestEvent() {
           Wire.write(primeBuffer[bufferPosition++]);
         }
         else {
+          long resp = 0;
+          Wire.write(resp);
+          Serial.println("Slave in idle");
           state = SLAVE_IDLE;
           bufferPosition = 0;
           bufferSize = 0;
@@ -166,8 +172,9 @@ void receiveEvent() {
   }
   while (avail > 0) {
     avail--;
-    message += Wire.read();
+    message += (char)Wire.read();
   }
+  Serial.println(message);
 
   if (message.equals("TASK")) { // task
     lastMessage = TASK;
@@ -191,7 +198,10 @@ void receiveEvent() {
     tmp.avalue[3] = Wire.read();
     upperBound = tmp.value;
 
+    Serial.println("Slave in Working");
     state = SLAVE_WORKING;
+    startedTime = millis();
+    Serial.println("STARTED");
 
   }
   if (message.equals("STAT")) { // state
@@ -208,10 +218,3 @@ void receiveEvent() {
   }
 
 }
-
-
-
-
-
-
-

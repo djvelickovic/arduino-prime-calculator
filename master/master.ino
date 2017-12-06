@@ -1,5 +1,6 @@
 
 #include <Wire.h>
+#include <math.h>
 
 // master states
 #define MASTER_IDLE      0
@@ -12,8 +13,7 @@
 #define SLAVE_UNKNOWN   3
 
 // master constants
-#define CHUNK_SIZE 10
-#define BUFFER_SIZE 300
+#define BUFFER_SIZE 50
 
 
 // union for long numbers
@@ -29,22 +29,22 @@ typedef union {
 //} int_number;
 
 // slaves constants
-const PROGMEM int slaveAddresses[] = { 8, 9, 10};
-const PROGMEM String slaveNames[]   = { "SLAVE1", "SLAVE2", "SLAVE3" };
-const PROGMEM byte slavesCnt = 3;
+const PROGMEM int slaveAddresses[] = { 8};
+const PROGMEM String slaveNames[]   = { "SLAVE1"};
+const PROGMEM byte slavesCnt = 1;
 
 // slaves variables
 //volatile byte slaveStates[]   = {SLAVE_UNKNOWN, SLAVE_UNKNOWN, SLAVE_UNKNOWN};
-volatile byte slaveStates[]   = {SLAVE_IDLE, SLAVE_IDLE, SLAVE_IDLE};
-volatile byte slavePercents[] = {0,   0,   0  };
-volatile long slaveTime[]     = {2,   5,   0  };
+volatile byte slaveStates[]   = {SLAVE_IDLE};
+volatile byte slavePercents[] = {0};
+volatile long slaveTime[]     = {2};
 
 
 // master variables
 
 // primes
-long primeBuffer[BUFFER_SIZE] = {};
-long primes = 0;
+long primesBuffer[slavesCnt][BUFFER_SIZE];
+long primes[slavesCnt] = {0};
 
 // prime searching interval
 LongNumber from;
@@ -66,9 +66,10 @@ void loop() {
 
     checkStatus();
     schedule();
-    checkPercent();
+    //checkPercent();
     checkResult();
-    printTime();
+    //printTime();
+    printNumbers();
   }
   else if (state == MASTER_IDLE) {
     Serial.println("IDLE ROUTINE");
@@ -87,12 +88,12 @@ void checkStatus() {
 
     Wire.requestFrom(slaveAddresses[i], 1);    // request 1 bytes (state) from slave device
 
-    if (Serial.available() < 1) {
+    if (Wire.available() < 1) {
       msgSlaveDead(i);
       //slaveStates[i] = SLAVE_UNKNOWN;
       continue;
     }
-    if (Serial.available() > 1) {
+    if (Wire.available() > 1) {
       msgSlaveDrunk(i);
       dumpSerial();
       continue;
@@ -113,7 +114,7 @@ void checkStatus() {
       default:
         //slaveStates[i] = SLAVE_UNKNOWN;
         msgSlaveDrunk(i);
-        continue;
+        break;
     }
   }
 }
@@ -157,6 +158,27 @@ void checkPercent() {
 
 void checkResult() {
   Serial.println("CHECKING RESULT");
+
+  for (int i = 0; i < slavesCnt; i++){
+    if (slaveStates[i] == SLAVE_RETURN){
+        LongNumber r;
+        Wire.requestFrom(slaveAddresses[i],4);
+        r.avalue[0] = Wire.read();
+        r.avalue[1] = Wire.read();
+        r.avalue[2] = Wire.read();
+        r.avalue[3] = Wire.read();
+       while(r.value != 0){
+          Wire.requestFrom(slaveAddresses[i],4);
+          r.avalue[0] = Wire.read();
+          r.avalue[1] = Wire.read();
+          r.avalue[2] = Wire.read();
+          r.avalue[3] = Wire.read();
+
+          primesBuffer[i][primes[i]++] = r.value;
+
+       }
+    }
+  }
 }
 
 void schedule() {
@@ -165,21 +187,22 @@ void schedule() {
       Serial.println("MASTER FINISHED SCHEDULING");
       return;
   }
-  
+
   for (int i = 0; i < slavesCnt; i++) {
-    
+
     if (slaveStates[i] == SLAVE_IDLE) { // only if slave is idle
       msgScheduling(i);
-      
+
       LongNumber upperBound;
-      upperBound.value = currentChunk.value + CHUNK_SIZE > to.value ? to.value : currentChunk.value + CHUNK_SIZE;
-                 
+      upperBound.value = currentChunk.value + getDelta();
+      upperBound.value = currentChunk.value > to.value ? to.value : currentChunk.value;
+
       Wire.beginTransmission(slaveAddresses[i]); // transmit to device
       Wire.write("TASK");         // sends 4 bytes
       Wire.write(from.value);     // sends 4 bytes
       Wire.write(to.value);       // sends 4 bytes
       Wire.endTransmission();
-      
+
       currentChunk.value = upperBound.value;
 
       if (currentChunk.value >= to.value){
@@ -187,23 +210,6 @@ void schedule() {
       }
     }
   }
-}
-
-
-// qsort requires you to create a sort function
-int sort_desc(const int *cmp1, const int *cmp2)
-{
-  // Need to cast the void * to int *
-  int a = *cmp1;
-  int b = *cmp2;
-  // The comparison
-  Serial.print("SortDesc ");
-  Serial.print(a);
-  Serial.print(" ");
-  Serial.println(b);
-  return slaveTime[a] > slaveTime[b] ? -1 : (slaveTime[a] < slaveTime[b] ? 1 : 0);
-  // A simpler, probably faster way:
-  //return b - a;
 }
 
 
@@ -232,7 +238,27 @@ void printTime() {
 }
 
 void printNumbers() {
+  int sorted[slavesCnt] = {};
+  for (int i = 0; i < slavesCnt; i++) {
+    sorted[i] = i;
+  }
 
+  //qsort(sorted, slaves,slaves,sort_desc);
+  int tmp;
+  for (int i = 0; i < slavesCnt - 1; i++) {
+    for (int j = i + 1; j < slavesCnt; j++) {
+      if (primesBuffer[i][0] > primesBuffer[j][0]) {
+        tmp = sorted[i];
+        sorted[i] = sorted[j];
+        sorted[j] = tmp;
+      }
+    }
+  }
+
+  for (int i = 0 ; i < slavesCnt; i++) {
+    printArray(i);
+    primes[i] = 0;
+  }
 }
 
 
@@ -278,12 +304,39 @@ void serialEvent() {
   dumpSerial();
 }
 
+long getDelta(){
+  if (!(currentChunk.value >= to.value)){
+    return -1;
+  }
+  long delta = 0;
+  int a;
+  for (long i = currentChunk.value; pi(i) - pi(currentChunk.value) < BUFFER_SIZE && i < to.value;){
+    a = ((to.value - i) < 100) ? (to.value - i) : 100;
+    i += a;
+    delta += a;
+  }
+  return delta;
+}
+
+
+int pi(long n){
+  return(n==0) ? 0 : (int) (n/log(n));
+}
+
+
+
+
 void dumpSerial(){
   while (Wire.available()) {
     Wire.read();
   }
 }
 
+void printArray(int i){
+    for (int cnt = 0; cnt < primes[i];cnt++){
+      Serial.println(primesBuffer[i][cnt]);
+    }
+}
 
 void msgSlaveDrunk(int i){
       Serial.print("Slave ");
@@ -317,21 +370,3 @@ void msgSlaveProgress(int i){
       Serial.print(slavePercents[i]);
       Serial.println("%");
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

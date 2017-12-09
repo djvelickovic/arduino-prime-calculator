@@ -14,7 +14,7 @@
 #define SLAVE_UNKNOWN   3
 
 // master constants
-#define BUFFER_SIZE 30
+#define BUFFER_SIZE 60
 
 
 // union for long numbers
@@ -25,17 +25,17 @@ typedef union {
 
 
 // slaves constants
-const PROGMEM int slaveAddresses[] = { 8};
-const PROGMEM String slaveNames[]  = { "SLAVE1"};
-const PROGMEM byte slavesCnt       = 1;
+const int slaveAddresses[] = { 8,9};
+const String slaveNames[]  = { "SLAVE2","SLAVE1"};
+const byte slavesCnt       = 1;
 
 int queue[slavesCnt * 2 + 1];
 int qLen = 0;
 
 // slaves variables
-volatile byte slaveStates[]   = {SLAVE_IDLE};
+volatile byte slaveStates[]   = {SLAVE_IDLE,SLAVE_IDLE};
 //volatile byte slavePercents[] = {0};/
-volatile long slaveTime[]     = {0};
+volatile long slaveTime[]     = {0, 0};
 
 
 // master variables
@@ -44,7 +44,7 @@ volatile long slaveTime[]     = {0};
 // buffer of primes per slave
 long primesBuffer[slavesCnt][BUFFER_SIZE + 30];
 // filled buffer per slave
-long primes[slavesCnt] = {0};
+long primes[] = {0, 0};
 
 // prime searching interval
 //LongNumber from;
@@ -130,7 +130,7 @@ void checkStatus() {
     Wire.write("STAT");                          // sends 4 bytes
     Wire.endTransmission();                      // ends transmission
     
-    delay(50);
+    //delay(50);
     Wire.requestFrom(slaveAddresses[i], 1);    // request 1 bytes (state) from slave device
     if (Wire.available() < 1) {
       msgSlaveDead(i);
@@ -155,7 +155,7 @@ void checkStatus() {
 void checkResult() {
 
   for (int i = 0; i < slavesCnt; i++) {
-    if (slaveStates[i] == SLAVE_RETURN) {
+    if (slaveStates[i] == SLAVE_RETURN  && primes[i] == 0) {
       Wire.beginTransmission(slaveAddresses[i]);
       Wire.write("RSLT");
       Wire.endTransmission();
@@ -196,7 +196,7 @@ void schedule() {
 
   for (int i = 0; i < slavesCnt; i++) {
 
-    if (slaveStates[i] == SLAVE_IDLE && !isInQueue(i)) { // only if slave is idle
+    if (slaveStates[i] == SLAVE_IDLE ) { // only if slave is idle
       msgScheduling(i);
 
       LongNumber upperBound;
@@ -283,7 +283,6 @@ void printNumbers() {
  * Reads input
  */
 void serialEvent() {
-//  Serial.println(Serial.available());/
 
   if (state == MASTER_IDLE) {
     char input[Serial.available()];

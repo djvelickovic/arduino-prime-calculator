@@ -15,7 +15,10 @@
 #define FAIL 0
 #define OK 1
 
-#define BUFFER_SIZE  100
+#define LED0 8
+#define LED1 9
+
+#define BUFFER_SIZE  200
 
 typedef union {
   long value;
@@ -51,6 +54,17 @@ double dpercent;
 
 void setup() {
   // put your setup code here, to run once:
+  noInterrupts();
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TCNT1 = 0;
+  OCR1A = 62500; // on second
+  TCCR1B |= (1 << WGM12);
+  TCCR1B |= (1 << CS12);
+  TIMSK1 |= (1 << OCIE1A);
+  interrupts();
+
+  
   Wire.begin(address);
   Wire.onReceive(receiveEvent);
   Wire.onRequest(requestEvent);
@@ -60,7 +74,40 @@ void setup() {
 
   startedTime = millis();
   Serial.println("WAKING UP...");
+  pinMode(LED0,OUTPUT);
+  pinMode(LED1,OUTPUT);
+    digitalWrite(LED0, LOW);
+    digitalWrite(LED1, LOW);
+
+  
 }
+
+volatile int current_time = 10;
+volatile int ledOn = LED0;
+volatile int ledOff = LED1;
+
+// timer interrupt routine
+ISR(TIMER1_COMPA_vect) {
+  current_time--;
+  if (state == SLAVE_WORKING){
+    if (current_time <= 0){
+      ledOn = ledOn == LED0 ? LED1 : LED0;
+      ledOff = ledOff == LED0 ? LED1 : LED0;
+      digitalWrite(ledOn, HIGH);
+      digitalWrite(ledOff, LOW);
+      int tmp = ledOn;
+
+      current_time = 10 - percent / 10;
+    }
+  }
+  else{
+    digitalWrite(LED0, LOW);
+    digitalWrite(LED1, LOW);
+  }
+
+  
+}
+
 
 void loop() {
   if (state == SLAVE_WORKING) {
@@ -157,7 +204,11 @@ void requestEvent() {
           bufferSize = 0;
           eta.value = 0;
           percent = 0;
+          current_time = 10;
+          ledOn = LED0;
+          ledOff = LED1;
 
+          
           Serial.print(millis());
           Serial.print(": Finished work in ");
           Serial.println(millis()-startedTime);
@@ -180,7 +231,6 @@ void receiveEvent() {
     avail--;
     message += (char)Wire.read();
   }
-
   if (message.equals("STAT")) {
     lastMessage = STAT;
   }
@@ -217,6 +267,8 @@ void receiveEvent() {
     //TODO: Check invalid input
     
     state = SLAVE_WORKING;
+    digitalWrite(LED0,HIGH);
+    digitalWrite(LED1,LOW);
     startedTime = millis();
     Serial.print(startedTime);
     Serial.println(": Started work...");

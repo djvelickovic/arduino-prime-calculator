@@ -1,6 +1,5 @@
 Giving tasks:
 MASTER -> SLAVE:  "TASK X Y"
-SLAVE  -> MASTER: "TASK OK" ili "TASK BS"
 
 Checking slave state:
 
@@ -9,37 +8,32 @@ WORKING 0
 RETURN  1
 IDLE    2
 
-MASTER STATES:
+MASTER STATES:// not important for protocol
 WORKING 0
 IDLE    1
 
+Checking slaves:
 // returns 1 byte
 MASTER -> SLAVE "STAT"
-SLAVE -> MASTER "0"
-SLAVE -> MASTER "1" ?! STATE OF RETURNING RESULT IF RETURNING EACH
-SLAVE -> MASTER "2"
+SLAVE -> MASTER "0"// WORKING STATE
+SLAVE -> MASTER "1"// RETURNING STATE
+SLAVE -> MASTER "2"// IDLE
 
-Checking slaves:
 
-// returns 1 bytes (byte)
-MASTER -> SLAVE:  "PERC"
-SLAVE  -> MASTER: "0"
-SLAVE  -> MASTER: "10"
-SLAVE  -> MASTER: "12"
+Scheduling:
+MASTER -> SLAVE: "TASKXX", X is 4 bytes, first X is lower bound, second X is upper bound
 ...
 
 Result:
 MASTER -> SLAVE: "RSLT"
-SLAVE  -> MASTER: "NOT_FINISHED"
-SLAVE  -> MASTER: "RESULT X" X is long number of results
-SLAVE  -> MASTER: send 4 byte for each result
+SLAVE  -> MASTER: sends 4 byte for next result, first byte is most significant byte, etc.. ex. [1][2][3][4] -> 100000000000 
+		  if there is no more numbers, then slave returns 0
 
 Evaluating time:
 
 // returns 4 bytes (long)
 MASTER -> SLAVE: "TIME"
-SLAVE  -> MASTER: "x" long number (4 bytes)
-
+SLAVE  -> MASTER: "x" long number (4 bytes) if not in woring state, returns all zeros
 
 
 IF STATE IDLE

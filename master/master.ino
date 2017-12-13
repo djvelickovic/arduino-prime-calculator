@@ -27,7 +27,7 @@ typedef union {
 // slaves constants
 const int slaveAddresses[] = { 8,9};
 const String slaveNames[]  = { "SLAVE2","SLAVE1"};
-const byte slavesCnt       = 1;
+const byte slavesCnt       = 2;
 
 int queue[slavesCnt * 2 + 1];
 int qLen = 0;

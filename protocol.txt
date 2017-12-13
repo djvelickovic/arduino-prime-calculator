@@ -1,6 +1,3 @@
-Giving tasks:
-MASTER -> SLAVE:  "TASK X Y"
-
 Checking slave state:
 
 SLAVE STATES:
